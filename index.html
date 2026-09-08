@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+    <meta charset="UTF-8">
+    <title>Yksinkertainen matopeli</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="leftSide">
+        <h1>Matopeli</h1>
+
+        <div id="menu">
+            <p>Paina nappia aloittaaksesi pelin.</p>
+            <button id="startButton">Aloita peli</button>
+        </div>
+
+        <div id="score" style="display:none;">
+            Pisteet: <span id="scoreValue">0</span> / 1250
+        </div>
+
+        <canvas id="gameCanvas" width="360" height="360" style="display:none;"></canvas>
+
+        <div id="gameOverScreen" style="display:none;">
+            <p id="gameOverText">Game Over</p>
+            <button id="restartButton">Aloita uusi peli</button>
+        </div>
+    </div>
+
+    <!-- OHJEET -->
+    <div id="instructions">
+        <h2>Ohjeet tulevat alle tämän tyylisesti:</h2>
+        <p>Voit aloittaa pelin painamalla "Aloita peli" -nappia tai Enter-näppäintä.</p>
+        <p>Ohjaa matoa nuolinäppäimillä:</p>
+        <p>⬆️ Ylös<br>⬇️ Alas<br>⬅️ Vasemmalle<br>➡️ Oikealle</p>
+        <p>Mato kasvaa joka 10 hedelmän jälkeen ja nopeutuu 5 hedelmän välein.</p>
+
+        <p>Syö hedelmiä saadaksesi pisteitä (+10).</p>
+        <p>Vältä törmäämästä seiniin tai omaan kehoon.</p>
+        <p>Tavoite: XXXX pistettä.</p>
+    </div>
+
+    <script src="game.js"></script>
+
+</body>
+</html>
+
