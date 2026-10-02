@@ -22,8 +22,10 @@ let snake = {
     xPos: 6,
     yPos: 8,
     fruits: 0,
+    fruitNeeded: 5,
     length: 3,
     score: 0,
+    scoreMult: 1,
     speed: 250,
     direction: null,
     body: null
@@ -142,24 +144,33 @@ function setDifficulty(difficulty) {
     switch (difficulty) {
         case "easy":
             snake.speed = 500;
+            snake.fruitNeeded = 3;
+            boardSize = 8;
+            snake.yPos = 5;
+            snake.xPos = 3;
+            fruit.yPos = 5;
+            fruit.xPos = 6;
             break;
         case "normal":
+            snake.scoreMult = 1.25;
             break;
         case "hard":
+            boardSize = 24;
+            snake.yPos = 13;
+            snake.xPos = 8;
+            fruit.yPos = 13;
+            fruit.xPos = 16;
+            snake.speed = 150;
+            snake.scoreMult = 1.5;
+            break;
+        case "impossible":
             boardSize = 32;
             snake.yPos = 16;
             snake.xPos = 12;
             fruit.yPos = 16;
-            fruit.xPos = 22;
-            snake.speed = 150;
-            break;
-        case "impossible":
-            boardSize = 36;
-            snake.yPos = 18;
-            snake.xPos = 13;
-            fruit.yPos = 18;
-            fruit.xPos = 23;
+            fruit.xPos = 20;
             snake.speed = 30;
+            snake.scoreMult = 2;
             break;
     }
 }
@@ -217,18 +228,18 @@ function eatFruit() {
     eatSFX.play();
     fruit.yPos = Math.floor(Math.random() * boardSize);
     fruit.xPos = Math.floor(Math.random() * boardSize);
-    score += 10;
-    snake.score += 10;
+    snake.score += 10 * snake.scoreMult;
+    score += 10 * snake.scoreMult;
     snake.fruits += 1;
     checkStatChange();
 }
 
 function checkStatChange() {
-    if (snake.fruits == 10) { 
+    if (snake.fruits == snake.fruitNeeded) { 
         snake.length += 1; 
         snake.fruits = 0;
     };
-    if ( snake.score == 50 ) {
+    if ( snake.score < 50 ) {
         if (snake.speed > 5) {
             snake.speed -= 10; 
             snake.score = 0;
