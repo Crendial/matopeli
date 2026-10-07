@@ -18,6 +18,7 @@ const cellSize = 20;
 const pointsPerFruit = 10;
 const initialSnakeLength = 3;
 const fillRatio = 0.20;
+const puroFruit = false;
 
 // Laskee tavoitepituuden kentän koosta
 function calculateTargetLength(canvasSize) {
@@ -438,7 +439,14 @@ function eatFruit() {
     score += pointsPerFruit;
     snake.fruits++;
 
-    checkStatChange();
+    // checkaa oliko syöty hedelmä Puro
+    if (puroFruit == true) {
+        // koodi, joka aktivoi puro vaikeustason
+        puroFruit = false;
+    }
+    else {
+        checkStatChange();
+    };
 }
 
 // Kasvu nykyisen tason säännöillä
@@ -449,7 +457,6 @@ function checkStatChange() {
         snake.length++;
         snake.fruits = 0;
     }
-
 }
 
 // Hedelmän sijoittaminen vapaaseen ruutuun
@@ -484,6 +491,16 @@ function spawnFruit() {
     );
 
     fruit = freeCells[randomIndex];
+
+    //Jonnekkin tänne funktioon se Puro kuva juttu!!!
+
+    // Arpoo, onko seuraava hedelmä Puro
+    if (currentLevel == 3) {
+        let randomNumber = Math.random() * 100
+        if (randomNumber == 67) {
+            puroFruit = true;
+        }
+    }
 }
 
 // Koko pelin piirtäminen
