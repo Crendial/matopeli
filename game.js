@@ -2,7 +2,7 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-// HTML-elementtien haku
+// HTML-elementit
 const startButton = document.getElementById("startButton");
 const restartButton = document.getElementById("restartButton");
 const menu = document.getElementById("menu");
@@ -10,116 +10,286 @@ const gameOverScreen = document.getElementById("gameOverScreen");
 const scoreDiv = document.getElementById("score");
 const scoreValueSpan = document.getElementById("scoreValue");
 const gameOverText = document.getElementById("gameOverText");
+const difficultySelect = document.getElementById("difficultySelect");
+const adminToggle = document.getElementById("adminToggle")
 
-let width = canvas.width;
-let height = canvas.height;
+// Pelin asetukset
+const cellSize = 20;
+const pointsPerFruit = 10;
+const initialSnakeLength = 3;
+const fillRatio = 0.20;
 
-// Madon ja hedelmän koko
-const cellSize = 15;
+// Laskee tavoitepituuden kentän koosta
+function calculateTargetLength(canvasSize) {
+    const cellsPerSide = canvasSize / cellSize;
+    const totalCells = cellsPerSide * cellsPerSide;
+
+    return Math.floor(totalCells * fillRatio);
+}
+
+// Vaikeustasot
+const levels = [
+    {
+        label: "Helppo",
+        size: 240,
+        speed: 250,
+        growthEvery: 1
+    },
+    {
+        label: "Keskivaikea",
+        size: 360,
+        speed: 120,
+        growthEvery: 2
+    },
+    {
+        label: "Vaikea",
+        size: 520,
+        speed: 70,
+        growthEvery: 3
+    },
+    {
+        label: "Puro",
+        size: 520,
+        speed: 5,
+        growthEvery: 1
+    }
+];
+
+// Avatut tasot säilyvät selaimessa. Tallennuksen estyessä peli toimii silti.
+const unlockStorageKey = "matopeli-unlocked-level";
+let unlockedLevel = 0;
+try {
+    const saved = Number(localStorage.getItem(unlockStorageKey));
+    if (Number.isInteger(saved) && saved >= 0 && saved < levels.length) {
+        unlockedLevel = saved;
+    }
+} catch (_) {}
+
+function updateDifficultySelect() {
+    for (let i = 0; i < difficultySelect.options.length; i++) {
+        const option = difficultySelect.options[i];
+        option.disabled = i > unlockedLevel;
+        option.textContent = levels[i].label + (option.disabled ? " (lukittu)" : "");
+    }
+}
+
+function unlockNextLevel() {
+    unlockedLevel = Math.max(unlockedLevel, currentLevel + 1);
+    try {
+        localStorage.setItem(unlockStorageKey, String(unlockedLevel));
+    } catch (_) {}
+    updateDifficultySelect();
+}
 
 // Pelin muuttujat
+let width = canvas.width;
+let height = canvas.height;
+let boardSize = width / cellSize;
+let currentLevel = 0;
+
 let snake = {
-    xPos: 6,
-    yPos: 8,
+    xPos: 0,
+    yPos: 0,
     fruits: 0,
-    fruitNeeded: 5,
-    length: 3,
-    score: 0,
-    scoreMult: 1,
-    speed: 250,
+    length: initialSnakeLength,
+    speed: levels[0].speed,
     direction: null,
-    body: null
+    body: []
 };
 
-let fruit = {
-    xPos: 8,
-    yPos: 8
-};
-
+let fruit = null;
 let score = 0;
-let gameLoopInterval;
 let gameRunning = false;
-let boardSize = 16;
-let difficulty = "hard"; // "easy", "normal", "hard", "impossible"
-let music = new Audio("/sound/gameBG_music.mp3")
+let gameLoopInterval = null;
+let nextDirection = null;
+let musicTimer = null;
+let voiceTimer = null;
+
+// Äänet: sound-kansio sijaitsee HTML-tiedoston vieressä
+const music = new Audio("sound/gameBG_music.mp3");
 music.loop = true;
 
-// Kontrollit
+// Äänen toistamisen epäonnistuminen ei estä pelaamista
+function playAudio(audio) {
+    const playback = audio.play();
+
+    if (playback) {
+        playback.catch(() => {});
+    }
+}
+
+function playSFX(name) {
+    playAudio(new Audio(`sound/${name}.mp3`));
+}
+
+// Pysäytetään ajastimet ja musiikki
+function stopTimers() {
+    clearInterval(gameLoopInterval);
+    clearTimeout(musicTimer);
+    clearTimeout(voiceTimer);
+
+    gameLoopInterval = null;
+    musicTimer = null;
+    voiceTimer = null;
+
+    music.pause();
+}
+
+// Muutetaan kentän kokoa ja nopeutta.
+// Madon ja hedelmän koordinaatit säilyvät.
+function setLevel(levelIndex) {
+    currentLevel = levelIndex;
+
+    const level = levels[currentLevel];
+
+    width = level.size;
+    height = level.size;
+
+    canvas.width = width;
+    canvas.height = height;
+
+    boardSize = width / cellSize;
+    snake.speed = level.speed;
+
+
+    if (gameRunning) {
+        resetTimer();
+    }
+}
+
+// Jokainen taso läpäistään samalla kentän kokoon suhteutetulla pituudella.
+function checkDifficulty() {
+    if (snake.length < calculateTargetLength(levels[currentLevel].size)) return;
+
+    if (currentLevel < levels.length - 1) {
+        unlockNextLevel();
+        snake.fruits = 0;
+        setLevel(currentLevel + 1);
+        difficultySelect.value = String(currentLevel);
+    } else {
+        endGame("Voitit! Läpäisit vaikean tason.");
+    }
+}
+
+// Palataan aloitusvalikkoon
+function returnToMenu() {
+    stopTimers();
+
+    gameRunning = false;
+    nextDirection = null;
+    score = 0;
+
+    snake.fruits = 0;
+    snake.length = initialSnakeLength;
+    snake.direction = null;
+    snake.body = [];
+
+    scoreValueSpan.textContent = score;
+
+    setLevel(Number(difficultySelect.value));
+    difficultySelect.disabled = false;
+
+    menu.style.display = "block";
+    gameOverScreen.style.display = "none";
+    scoreDiv.style.display = "none";
+
+    ctx.clearRect(0, 0, width, height);
+}
+
+// Näppäimistökontrollit
 document.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-        if (!gameRunning) {
-            startGame(boardSize, difficulty);
-        }
+    if (e.key === "Escape") {
+        returnToMenu();
+        return;
+    }
+
+    // Painikkeet käsittelevät Enterin itse
+    if (["BUTTON", "SELECT", "OPTION"].includes(e.target.tagName)) return;
+
+    if (e.key === "Enter" && !gameRunning) {
+        e.preventDefault();
+        startGame();
         return;
     }
 
     if (!gameRunning) return;
 
-    // Estetään sivun vieriminen nuolinäppäimillä
-    if (e.key.startsWith("Arrow")) {
-        e.preventDefault();
-    }
+    const directions = {
+        ArrowUp: "up",
+        ArrowDown: "down",
+        ArrowLeft: "left",
+        ArrowRight: "right"
+    };
 
-    if (e.key === "Escape") {
-        endGame("Game Over");
+    const requested = directions[e.key];
+
+    if (!requested) return;
+
+    // Estetään sivun vieriminen nuolinäppäimillä
+    e.preventDefault();
+
+    const opposite = {
+        up: "down",
+        down: "up",
+        left: "right",
+        right: "left"
+    };
+
+    // Hyväksytään vain yksi suunnanmuutos per askel
+    if (nextDirection !== null) return;
+
+    // Alussa vartalo on pään vasemmalla puolella
+    const currentDirection = snake.direction || "right";
+
+    // Täyskäännös on estetty
+    if (requested === opposite[currentDirection]) return;
+
+    // Samansuuntaiset painallukset eivät kuluta käännöstä
+    if (
+        snake.direction !== null &&
+        requested === currentDirection
+    ) {
         return;
     }
 
-    // Et voi enää kääntyä oman kehon sisälle suoraan
-    switch (e.key) {
-        case "ArrowUp":
-            if (snake.direction == "down") { break; }
-            else {
-                snake.direction = "up";
-                break;
-            };
-        case "ArrowDown":
-            if (snake.direction == "up") { break; }
-            else {
-                snake.direction = "down";
-                break;
-            };
-        case "ArrowLeft":
-            if (snake.direction == "right") { break; }
-            else { 
-                snake.direction = "left";
-                break;
-            };
-        case "ArrowRight":
-            if (snake.direction == "left") { break; }
-            else {
-                snake.direction = "right";
-                break;
-            };
-    }
+    nextDirection = requested;
 });
 
 // Pelin aloitus
-function startGame(size, diff) {
+function startGame() {
     if (gameRunning) return;
-    boardSize = size;
-    difficulty = diff;
 
-    // Nollataan madon tiedot
-    snake.xPos = 5;
-    snake.yPos = 8;
-    snake.fruits = 0;
-    snake.length = 3;
-    snake.direction = null;
-    snake.body = null;
-
-    // Nollataan myös hedelmän positio!
-    fruit.xPos = 10;
-    fruit.yPos = 8;
-
-    setDifficulty(difficulty)
-    width = boardSize * cellSize;
-    height = boardSize * cellSize;
-    canvas.width = width;
-    canvas.height = height;
+    stopTimers();
 
     score = 0;
+
+    snake.fruits = 0;
+    snake.length = initialSnakeLength;
+    snake.direction = null;
+
+    nextDirection = null;
+
+    // Aloitetaan valitulta, avatulta tasolta.
+    const selectedLevel = Number(difficultySelect.value);
+    setLevel(Number.isInteger(selectedLevel) && selectedLevel >= 0 &&
+        selectedLevel <= unlockedLevel ? selectedLevel : 0);
+    difficultySelect.disabled = true;
+
+    snake.xPos = Math.floor(boardSize / 2);
+    snake.yPos = Math.floor(boardSize / 2);
+
+    // Luodaan vartalo pään vasemmalle puolelle
+    snake.body = Array.from(
+        { length: snake.length },
+        (_, i) => ({
+            xPos: snake.xPos - i,
+            yPos: snake.yPos
+        })
+    );
+
     scoreValueSpan.textContent = score;
+
+    spawnFruit();
 
     menu.style.display = "none";
     gameOverScreen.style.display = "none";
@@ -127,210 +297,494 @@ function startGame(size, diff) {
 
     gameRunning = true;
 
-    // Piirretään alkutilanne
-    ctx.clearRect(0, 0, width, height);
-    drawFruit();
-    drawSnake();
-
+    drawGame();
     resetTimer();
-    let gameStartAudio = new Audio("/sound/gameStart_SFX.mp3");
-    gameStartAudio.play();
-    
-    music.currentTime = 0;
-    setTimeout(function musicStart() { music.play(); }, 500);
-};
 
-function setDifficulty(difficulty) {
-    switch (difficulty) {
-        case "easy":
-            snake.speed = 500;
-            snake.fruitNeeded = 3;
-            boardSize = 8;
-            snake.yPos = 5;
-            snake.xPos = 3;
-            fruit.yPos = 5;
-            fruit.xPos = 6;
-            break;
-        case "normal":
-            snake.scoreMult = 1.25;
-            break;
-        case "hard":
-            boardSize = 24;
-            snake.yPos = 13;
-            snake.xPos = 8;
-            fruit.yPos = 13;
-            fruit.xPos = 16;
-            snake.speed = 150;
-            snake.scoreMult = 1.5;
-            break;
-        case "impossible":
-            boardSize = 32;
-            snake.yPos = 16;
-            snake.xPos = 12;
-            fruit.yPos = 16;
-            fruit.xPos = 20;
-            snake.speed = 30;
-            snake.scoreMult = 2;
-            break;
-    }
+    playSFX("gameStart_SFX");
+
+    music.currentTime = 0;
+
+    musicTimer = setTimeout(() => {
+        if (gameRunning) {
+            playAudio(music);
+        }
+    }, 500);
 }
 
+// Käynnistetään tai päivitetään liikkumisajastin
 function resetTimer() {
-    if (gameLoopInterval == null) { gameLoopInterval = setInterval(movement, snake.speed); }
-    else {
-        clearInterval(gameLoopInterval)
-        gameLoopInterval = setInterval(movement, snake.speed);
-    }
-};
+    clearInterval(gameLoopInterval);
+
+    gameLoopInterval = setInterval(
+        movement,
+        snake.speed
+    );
+}
 
 // Madon liikkuminen
 function movement() {
     if (!gameRunning) return;
 
+    if (nextDirection !== null) {
+        snake.direction = nextDirection;
+        nextDirection = null;
+    }
+
+    // Mato odottaa ensimmäistä nuolinäppäintä
+    if (snake.direction === null) return;
+
+    let x = snake.xPos;
+    let y = snake.yPos;
+
     switch (snake.direction) {
         case "up":
-            snake.yPos -= 1;
+            y--;
             break;
+
         case "down":
-            snake.yPos += 1;
+            y++;
             break;
-        case "right":
-            snake.xPos += 1;
-            break;
+
         case "left":
-            snake.xPos -= 1;
+            x--;
+            break;
+
+        case "right":
+            x++;
             break;
     }
 
-    let dedCheck = collision();
-    if (dedCheck == "ded") { return; }
-    else {
-        // Tyhjennetään edellinen kuva ja piirretään uusi
-        ctx.clearRect(0, 0, width, height);
-        drawFruit();
-        drawSnake();
-        scoreValueSpan.textContent = score;
-    };
-    console.log(snake.speed);
-}
+    const eating =
+        fruit !== null &&
+        x === fruit.xPos &&
+        y === fruit.yPos;
 
-function collision() {
-    if (snake.yPos == fruit.yPos && snake.xPos == fruit.xPos) { eatFruit() }
-    if (snake.yPos < 0 || snake.xPos < 0 || snake.yPos > (boardSize - 1) || snake.xPos > (boardSize - 1)) { 
-        endGame("Osuit seinään");
-        return "ded";
-    }
-    else { return "notDed"; }
-}
+    const growthEvery = levels[currentLevel].growthEvery;
 
-function eatFruit() {
-    let eatSFX = new Audio("/sound/eat_SFX.mp3")
-    eatSFX.play();
-    fruit.yPos = Math.floor(Math.random() * boardSize);
-    fruit.xPos = Math.floor(Math.random() * boardSize);
-    snake.score += 10 * snake.scoreMult;
-    score += 10 * snake.scoreMult;
-    snake.fruits += 1;
-    checkStatChange();
-}
+    const growing =
+        eating &&
+        snake.fruits + 1 >= growthEvery;
 
-function checkStatChange() {
-    if (snake.fruits == snake.fruitNeeded) { 
-        snake.length += 1; 
-        snake.fruits = 0;
-    };
-    if ( snake.score < 50 ) {
-        if (snake.speed > 5) {
-            snake.speed -= 10; 
-            snake.score = 0;
-            resetTimer();
-        }
-        if (snake.speed < 5) { snake.speed = 5; };
-    };
-}
+    // Tarkistetaan törmäys ennen vartalon muuttamista
+    if (collision(x, y, growing)) return;
 
-// Madon piirtäminen: vihreä häntä ja oranssi pää
-function drawSnake() {
-    // Luodaan vartalo ensimmäisellä kutsulla
-    if (!snake.body) {
-        snake.body = [];
+    snake.xPos = x;
+    snake.yPos = y;
 
-        for (let i = 0; i < snake.length; i++) {
-            snake.body.push({
-                xPos: snake.xPos - i,
-                yPos: snake.yPos
-            });
-        }
+    // Lisätään uusi pää vartalon alkuun
+    snake.body.unshift({
+        xPos: x,
+        yPos: y
+    });
+
+    if (eating) {
+        eatFruit();
     }
 
-    const head = snake.body[0];
-
-    // Lisätään uusi pää vain, jos mato on liikkunut
-    if (head.xPos !== snake.xPos || head.yPos !== snake.yPos) {
-        snake.body.unshift({
-            xPos: snake.xPos,
-            yPos: snake.yPos
-        });
-    }
-
-    // Rajataan vartalo madon nykyiseen pituuteen
+    // Poistetaan ylimääräinen häntäosa
     while (snake.body.length > snake.length) {
         snake.body.pop();
     }
 
-    // Piirretään häntä ensin ja pää viimeisenä
-    for (let i = snake.body.length - 1; i >= 0; i--) {
-        const part = snake.body[i];
+    // Tasonvaihto tehdään vasta, kun vartalo on päivitetty.
+    if (eating) {
+        checkDifficulty();
+        if (gameRunning) spawnFruit();
+    }
 
-        ctx.fillStyle = i === 0 ? "orange" : "green";
+    scoreValueSpan.textContent = score;
 
-        ctx.fillRect(
-            part.xPos * cellSize,
-            part.yPos * cellSize,
-            cellSize - 1,
-            cellSize - 1
-        );
+    drawGame();
+
+    if (gameRunning && fruit === null) {
+        endGame("Voitit! Täytit koko kentän.");
     }
 }
 
-// Punaisen hedelmän piirtäminen
-function drawFruit() {
-    ctx.fillStyle = "red";
-    ctx.beginPath();
+// Seinä- ja vartalotörmäykset
+function collision(x, y, growing) {
+    if (
+        x < 0 ||
+        y < 0 ||
+        x >= boardSize ||
+        y >= boardSize
+    ) {
+        endGame("Osuit seinään — Game Over");
+        return true;
+    }
 
-    ctx.arc(
-        fruit.xPos * cellSize + cellSize / 2,
-        fruit.yPos * cellSize + cellSize / 2,
-        cellSize / 2 - 1,
-        0,
-        Math.PI * 2
+    // Viimeinen häntäruutu vapautuu samalla askeleella,
+    // ellei mato kasva.
+    const bodyToCheck = growing
+        ? snake.body
+        : snake.body.slice(0, -1);
+
+    const hitBody = bodyToCheck.some((part) => {
+        return part.xPos === x && part.yPos === y;
+    });
+
+    if (hitBody) {
+        endGame("Osuit omaan häntään — Game Over");
+        return true;
+    }
+
+    return false;
+}
+
+// Hedelmän syöminen
+function eatFruit() {
+    playSFX("eat_SFX");
+
+    score += pointsPerFruit;
+    snake.fruits++;
+
+    checkStatChange();
+}
+
+// Kasvu nykyisen tason säännöillä
+function checkStatChange() {
+    const growthEvery = levels[currentLevel].growthEvery;
+
+    if (snake.fruits >= growthEvery) {
+        snake.length++;
+        snake.fruits = 0;
+    }
+
+}
+
+// Hedelmän sijoittaminen vapaaseen ruutuun
+function spawnFruit() {
+    const freeCells = [];
+
+    // Tallennetaan varatut ruudut nopeaa tarkistusta varten
+    const occupiedCells = new Set(
+        snake.body.map((part) => {
+            return `${part.xPos},${part.yPos}`;
+        })
     );
 
+    for (let y = 0; y < boardSize; y++) {
+        for (let x = 0; x < boardSize; x++) {
+            if (!occupiedCells.has(`${x},${y}`)) {
+                freeCells.push({
+                    xPos: x,
+                    yPos: y
+                });
+            }
+        }
+    }
+
+    if (freeCells.length === 0) {
+        fruit = null;
+        return;
+    }
+
+    const randomIndex = Math.floor(
+        Math.random() * freeCells.length
+    );
+
+    fruit = freeCells[randomIndex];
+}
+
+// Koko pelin piirtäminen
+function drawGame() {
+    ctx.clearRect(0, 0, width, height);
+
+    drawFruit();
+    drawSnake();
+}
+
+// Madon piirtäminen
+function drawSnake() {
+    if (snake.body.length === 0) return;
+
+    const center = (part) => ({
+        x: (part.xPos + 0.5) * cellSize,
+        y: (part.yPos + 0.5) * cellSize
+    });
+
+    const colors = [
+        "#43b85c", // Vihreä
+        "#77cf50", // Vaaleanvihreä
+        "#28b7a7", // Turkoosi
+        "#529de0", // Sininen
+        "#a478dd", // Violetti
+        "#ed79ac"  // Vaaleanpunainen
+    ];
+
+    // Kasvu avaa uusia värejä
+    const unlockedColors = Math.min(
+        colors.length,
+        Math.max(1, snake.length - 2)
+    );
+
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    // Piirretään vartalo hännästä päätä kohti
+    for (let i = snake.body.length - 1; i >= 1; i--) {
+        const a = center(snake.body[i]);
+        const b = center(snake.body[i - 1]);
+
+        const color =
+            colors[Math.floor((i - 1) / 2) % unlockedColors];
+
+        ctx.fillStyle = color;
+        ctx.strokeStyle = color;
+
+        if (i === snake.body.length - 1) {
+            // Kapeneva hännän kärki
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const distance = Math.hypot(dx, dy);
+
+            const px =
+                (-dy / distance) * cellSize * 0.34;
+
+            const py =
+                (dx / distance) * cellSize * 0.34;
+
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x + px, b.y + py);
+            ctx.lineTo(b.x - px, b.y - py);
+            ctx.closePath();
+            ctx.fill();
+        } else {
+            // Pyöristetty vartalo
+            ctx.lineWidth = cellSize * 0.7;
+
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+        }
+    }
+
+    // Oranssi pää puolipyöreällä etureunalla
+    const head = center(snake.body[0]);
+
+    const angles = {
+        right: 0,
+        down: Math.PI / 2,
+        left: Math.PI,
+        up: -Math.PI / 2
+    };
+
+    ctx.save();
+    ctx.translate(head.x, head.y);
+    ctx.rotate(angles[snake.direction || "right"]);
+
+    const radius = cellSize * 0.43;
+
+    ctx.fillStyle = "#ff9c32";
+
+    ctx.beginPath();
+    ctx.moveTo(-radius, -radius);
+    ctx.lineTo(0, -radius);
+
+    ctx.arc(
+        0,
+        0,
+        radius,
+        -Math.PI / 2,
+        Math.PI / 2
+    );
+
+    ctx.lineTo(-radius, radius);
+    ctx.closePath();
     ctx.fill();
+
+    // Silmät
+    for (const eyeY of [
+        -radius * 0.52,
+        radius * 0.52
+    ]) {
+        ctx.fillStyle = "white";
+
+        ctx.beginPath();
+        ctx.arc(
+            radius * 0.25,
+            eyeY,
+            2.5,
+            0,
+            Math.PI * 2
+        );
+        ctx.fill();
+
+        ctx.fillStyle = "#17202b";
+
+        ctx.beginPath();
+        ctx.arc(
+            radius * 0.36,
+            eyeY,
+            1.2,
+            0,
+            Math.PI * 2
+        );
+        ctx.fill();
+    }
+
+    ctx.restore();
+}
+
+// Hedelmän piirtäminen
+// Hedelmän piirtäminen omenan näköisenä
+function drawFruit() {
+    if (fruit === null) return;
+
+    const x = (fruit.xPos + 0.5) * cellSize;
+    const y = (fruit.yPos + 0.5) * cellSize;
+    const size = cellSize;
+
+    ctx.save();
+    ctx.translate(x, y);
+
+    // Omenan punainen runko
+    ctx.fillStyle = "#e53935";
+    ctx.beginPath();
+
+    // Yläosan lovi
+    ctx.moveTo(0, -size * 0.22);
+
+    // Vasen puoli
+    ctx.bezierCurveTo(
+        -size * 0.42, -size * 0.48,
+        -size * 0.48, size * 0.12,
+        -size * 0.20, size * 0.35
+    );
+
+    // Pohja
+    ctx.bezierCurveTo(
+        -size * 0.10, size * 0.43,
+        -size * 0.04, size * 0.34,
+        0, size * 0.35
+    );
+
+    ctx.bezierCurveTo(
+        size * 0.04, size * 0.34,
+        size * 0.10, size * 0.43,
+        size * 0.20, size * 0.35
+    );
+
+    // Oikea puoli
+    ctx.bezierCurveTo(
+        size * 0.48, size * 0.12,
+        size * 0.42, -size * 0.48,
+        0, -size * 0.22
+    );
+
+    ctx.closePath();
+    ctx.fill();
+
+    // Ruskea varsi
+    ctx.strokeStyle = "#795548";
+    ctx.lineWidth = size * 0.08;
+    ctx.lineCap = "round";
+
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.23);
+    ctx.quadraticCurveTo(
+        -size * 0.03, -size * 0.34,
+        size * 0.04, -size * 0.43
+    );
+    ctx.stroke();
+
+    // Vihreä lehti
+    ctx.fillStyle = "#66bb6a";
+    ctx.beginPath();
+    ctx.moveTo(size * 0.02, -size * 0.34);
+
+    ctx.quadraticCurveTo(
+        size * 0.12, -size * 0.49,
+        size * 0.29, -size * 0.40
+    );
+
+    ctx.quadraticCurveTo(
+        size * 0.18, -size * 0.27,
+        size * 0.02, -size * 0.34
+    );
+
+    ctx.closePath();
+    ctx.fill();
+
+    // Pieni kiilto vasemmalla
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.65)";
+    ctx.lineWidth = size * 0.07;
+
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.21, -size * 0.13);
+    ctx.quadraticCurveTo(
+        -size * 0.29, -size * 0.02,
+        -size * 0.23, size * 0.10
+    );
+    ctx.stroke();
+
+    ctx.restore();
 }
 
 // Pelin lopettaminen
 function endGame(message) {
-    clearInterval(gameLoopInterval);
+    stopTimers();
     gameRunning = false;
+    difficultySelect.disabled = false;
 
     gameOverText.textContent = message;
     gameOverScreen.style.display = "block";
 
-    music.pause();
-    let gameOverSFX = new Audio("/sound/gameOver_SFX.mp3");
-    gameOverSFX.play();
-    let gameOverVoice = new Audio ("/sound/gameOverVoice_SFX.mp3");
-    setTimeout(function playVoice() { 
-        gameOverVoice.play(); 
+    playSFX("gameOver_SFX");
+
+    voiceTimer = setTimeout(() => {
+        playSFX("gameOverVoice_SFX");
     }, 1500);
-};
+}
+
+function ihmisoikeudet() {
+    if (adminToggle.checked) {
+        unlockedLevel = 2;
+        try {
+            localStorage.setItem(unlockStorageKey, String(unlockedLevel));
+        } catch (_) {}
+        updateDifficultySelect();
+    }
+    else {
+        unlockedLevel = 0;
+        try {
+            localStorage.setItem(unlockStorageKey, String(unlockedLevel));
+        } catch (_) {}
+        updateDifficultySelect();
+        setLevel(0);
+        difficultySelect.value = String(currentLevel)
+    }
+}
 
 // Painikkeet
 startButton.addEventListener("click", () => {
-    startGame(boardSize, difficulty);
+    startButton.blur();
+    startGame();
 });
 
 restartButton.addEventListener("click", () => {
-    startGame(boardSize, difficulty);
+    restartButton.blur();
+    startGame();
 });
+
+// Valinta päivittää kentän esikatselun ennen seuraavaa peliä.
+difficultySelect.addEventListener("change", () => {
+    if (gameRunning) return;
+    const selectedLevel = Number(difficultySelect.value);
+    if (!Number.isInteger(selectedLevel) || selectedLevel < 0 || selectedLevel > unlockedLevel) {
+        difficultySelect.value = String(currentLevel);
+        return;
+    }
+    setLevel(selectedLevel);
+    ctx.clearRect(0, 0, width, height);
+});
+
+// admin toggle, resetoi levelit epä unlockatuksi jos uncheckaa.
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelector('#adminToggle').addEventListener('change', ihmisoikeudet);
+})
+
+updateDifficultySelect();
+setLevel(0);

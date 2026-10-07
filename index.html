@@ -2,46 +2,145 @@
 <html lang="fi">
 <head>
     <meta charset="UTF-8">
-    <title>Yksinkertainen matopeli</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Matopeli</title>
+
     <link rel="stylesheet" href="style.css">
+
+    <style>
+        #progressInfo {
+            max-width: 520px;
+            line-height: 1.5;
+        }
+
+        #gameCanvas {
+            display: block;
+            max-width: 100%;
+            height: auto;
+            background: transparent;
+            border: 2px solid #526176;
+        }
+
+        #score {
+            margin: 12px 0;
+            font-weight: bold;
+        }
+
+        button {
+            cursor: pointer;
+        }
+    </style>
 </head>
+
 <body>
     <div id="leftSide">
         <h1>Matopeli</h1>
 
+        <div id="difficultyPicker">
+            <label for="difficultySelect">Vaikeustaso:</label>
+            <select id="difficultySelect">
+                <option value="0">Helppo</option>
+                <option value="1" disabled>Keskivaikea (lukittu)</option>
+                <option value="2" disabled>Vaikea (lukittu)</option>
+            </select>
+        </div>
+
+        <button id="secretButton" type="button" hidden>Kokeile tasoa "Puro"</button>
+
+        <!-- Aloitusvalikko -->
         <div id="menu">
-            <p>Paina nappia aloittaaksesi pelin.</p>
-            <button id="startButton">Aloita peli</button>
+            <p>
+                Aloita peli ja lähde liikkeelle nuolinäppäimellä.
+            </p>
+
+            <button id="startButton" type="button">
+                Aloita peli
+            </button>
         </div>
 
-        <div id="score" style="display:none;">
-            Pisteet: <span id="scoreValue">0</span> / 1250
+        <!-- Pisteet -->
+        <div id="score" style="display: none;">
+            Pisteet: <span id="scoreValue">0</span>
         </div>
 
-        <canvas id="gameCanvas" width="240" height="240"></canvas>
+        <!-- Pelikenttä -->
+        <div id="canvasBackground">
+            <img id="backgroundImage" src="image/maze.jpg" alt="" aria-hidden="true">
+        <canvas
+            id="gameCanvas"
+            width="240"
+            height="240"
+        ></canvas>
+        </div>
 
-        <div id="gameOverScreen" style="display:none;">
+        <!-- Pelin lopetusnäyttö -->
+        <div id="gameOverScreen" style="display: none;">
             <p id="gameOverText">Game Over</p>
-            <button id="restartButton">Aloita uusi peli</button>
+
+            <button id="restartButton" type="button">
+                Aloita uusi peli
+            </button>
         </div>
     </div>
 
-    <!-- OHJEET -->
+    <!-- Ohjeet -->
     <div id="instructions">
-        <h2>Ohjeet tulevat alle tämän tyylisesti:</h2>
-        <p>Voit aloittaa pelin painamalla "Aloita peli" -nappia tai Enter-näppäintä.</p>
-        <p>Escape ns nollaa pelin ja palauttaa aloitusvalikon</p>
-        <p>Ohjaa matoa nuolinäppäimillä:</p>
-        <p>⬆️ Ylös<br>⬇️ Alas<br>⬅️ Vasemmalle<br>➡️ Oikealle</p>
-        <p>Mato kasvaa joka 10 hedelmän jälkeen ja nopeutuu 50 pisteen välein.</p>
+        <h2>Ohjeet</h2>
 
-        <p>Syö hedelmiä saadaksesi pisteitä (+10).</p>
-        <p>Vältä törmäämästä seiniin tai omaan kehoon.</p>
-        <p>Tavoite: XXXX pistettä.</p>
+        <p><strong>Enter:</strong> aloita peli tai uusi peli.</p>
+        <p><strong>Nuolinäppäimet:</strong> lähde liikkeelle ja ohjaa matoa.</p>
+        <p><strong>Escape:</strong> palaa aloitusvalikkoon.</p>
+
+        <p><strong>Vaikeustasot</strong></p>
+        <p><strong>Helppo:</strong> pieni kenttä ja rauhallinen nopeus.</p>
+        <p><strong>Keskivaikea:</strong> suurempi kenttä ja nopeampi mato.</p>
+        <p><strong>Vaikein:</strong> suurin kenttä ja erittäin nopea mato.</p>
+        <p>Peli alkaa helpolta tasolta ja vaikeutuu automaattisesti.</p>
+
+        <div id="backgroundSettings">
+            <p><strong>Taustakuvan asetukset</strong></p>
+            <label for="backgroundBlur">Sumennus: <output id="blurValue" for="backgroundBlur">2 px</output></label>
+            <input id="backgroundBlur" type="range" min="0" max="20" step="1" value="2">
+        </div>
+
+        <p><label><input id="adminToggle" name="adminToggle" type="checkbox"> Admin: avaa kaikki tasot</label></p>
     </div>
+
+    <dialog id="secretChoice">
+        <p><strong>Taso Puro avattu!</strong></p>
+        <p>Kokeiletko uutta tasoa vai jatkatko nykyistä peliä?</p>
+        <button id="trySecretButton" type="button">Kokeile tasoa: Puro</button>
+        <button id="continueButton" type="button">Jatka nykyistä peliä</button>
+    </dialog>
 
     <script src="game.js"></script>
+    <script>
+        const backgroundBlur = document.getElementById("backgroundBlur");
+        const blurValue = document.getElementById("blurValue");
+        const backgroundImage = document.getElementById("backgroundImage");
 
+        try {
+            const savedBlur = localStorage.getItem("matopeli-background-blur");
+            if (savedBlur !== null && Number.isFinite(Number(savedBlur))) {
+                backgroundBlur.value = Math.max(0, Math.min(20, Number(savedBlur)));
+            }
+        } catch (_) {}
+
+        function updateBackgroundBlur() {
+            const value = Number(backgroundBlur.value);
+            blurValue.textContent = `${value} px`;
+            backgroundImage.style.filter = `blur(${value}px)`;
+            // Kuvan reunoille jätetään tilaa sumennusta varten.
+            backgroundImage.style.inset = `${-value * 3}px`;
+            backgroundImage.style.width = `calc(100% + ${value * 6}px)`;
+            backgroundImage.style.height = `calc(100% + ${value * 6}px)`;
+            try { localStorage.setItem("matopeli-background-blur", String(value)); } catch (_) {}
+        }
+
+        backgroundBlur.addEventListener("input", updateBackgroundBlur);
+        backgroundImage.addEventListener("error", () => { backgroundImage.hidden = true; });
+        updateBackgroundBlur();
+    </script>
 </body>
 </html>
-
