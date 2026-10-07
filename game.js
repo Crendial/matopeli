@@ -492,7 +492,7 @@ function spawnFruit() {
 
     fruit = freeCells[randomIndex];
 
-    //Jonnekkin tänne funktioon se Puro kuva juttu!!!
+    //Jonnekkin tänne funktioon se Puro kuva juttu!!! Eli if (puroFruit == true) { tee jotain... }
 
     // Arpoo, onko seuraava hedelmä Puro
     if (currentLevel == 3) {
